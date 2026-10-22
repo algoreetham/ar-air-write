@@ -1,0 +1,1675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spatial Paint — AR Physics, Flowers & Hand Tracking</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    /* ═══════════════════════════════════════════════════
+       PREMIUM SPATIAL GLASS DESIGN SYSTEM
+       ═══════════════════════════════════════════════════ */
+    :root {
+      --bg-dark: #090a10;
+      --glass-bg: rgba(20, 22, 34, 0.65);
+      --glass-border: rgba(255, 255, 255, 0.14);
+      --glass-hover: rgba(255, 255, 255, 0.22);
+      --glass-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+      
+      --accent-cyan: #00f0ff;
+      --accent-pink: #ff4797;
+      --accent-purple: #9d4edd;
+      --accent-gold: #ffb703;
+      --accent-green: #00f5d4;
+      
+      --text-main: #ffffff;
+      --text-muted: rgba(255, 255, 255, 0.7);
+    }
+
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      font-family: 'Outfit', -apple-system, blinkmacsystemfont, sans-serif;
+      color: var(--text-main);
+      background: var(--bg-dark);
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* ═══════════════════════════════════════════════════
+       WEBCAM & BACKGROUND LAYERS
+       ═══════════════════════════════════════════════════ */
+    #webcam-container {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      background: radial-gradient(circle at 50% 40%, #16182c 0%, #080912 100%);
+      z-index: 1;
+    }
+    #webcam {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      opacity: 0.9;
+      filter: brightness(0.92) contrast(1.08) saturate(1.1);
+      transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    #webcam.hidden-feed { opacity: 0; }
+
+    #canvas {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      z-index: 10;
+      cursor: crosshair;
+    }
+
+    /* ═══════════════════════════════════════════════════
+       GLASS UI PANELS & HUD
+       ═══════════════════════════════════════════════════ */
+    #ui-layer {
+      position: absolute; inset: 0;
+      z-index: 20;
+      display: flex; flex-direction: column;
+      pointer-events: none;
+    }
+
+    /* Top Floating Dock */
+    .top-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 24px 36px;
+    }
+
+    .glass-pill {
+      pointer-events: auto;
+      background: var(--glass-bg);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+      border: 1px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+      border-radius: 100px;
+      padding: 10px 22px;
+      font-size: 0.95rem; font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text-main);
+      display: flex; align-items: center; gap: 10px;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      cursor: pointer;
+    }
+    .glass-pill:hover, .glass-pill.hovered {
+      background: rgba(255, 255, 255, 0.18);
+      border-color: rgba(255, 255, 255, 0.35);
+      transform: translateY(-2px) scale(1.03);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 240, 255, 0.25);
+    }
+    .glass-pill:active { transform: scale(0.97); }
+
+    .status-badge {
+      font-size: 0.88rem; font-weight: 600;
+      color: rgba(255, 255, 255, 0.9);
+      background: rgba(10, 15, 30, 0.7);
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      border-radius: 100px;
+      padding: 8px 20px;
+      backdrop-filter: blur(16px);
+      display: flex; align-items: center; gap: 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    }
+    .status-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #ffb703;
+      box-shadow: 0 0 10px #ffb703;
+      transition: all 0.3s;
+    }
+
+    .hud-badge {
+      font-size: 1.3rem; font-weight: 700;
+      color: var(--accent-gold);
+      background: rgba(255, 183, 3, 0.12);
+      border: 1px solid rgba(255, 183, 3, 0.3);
+      border-radius: 100px;
+      padding: 8px 24px;
+      display: none;
+      backdrop-filter: blur(16px);
+      text-shadow: 0 0 12px rgba(255, 183, 3, 0.4);
+    }
+
+    /* Bottom Toolbar (Paint Mode & Flower Mode) */
+    #paint-toolbar {
+      position: absolute;
+      bottom: 30px; left: 50%;
+      transform: translateX(-50%);
+      display: none; align-items: center; gap: 14px;
+      background: var(--glass-bg);
+      backdrop-filter: blur(28px) saturate(200%);
+      -webkit-backdrop-filter: blur(28px) saturate(200%);
+      border: 1px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+      padding: 10px 24px;
+      border-radius: 100px;
+      pointer-events: auto;
+      z-index: 30;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    #paint-toolbar.visible { display: flex; }
+
+    .color-swatch {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: auto;
+    }
+    .color-swatch:hover, .color-swatch.active {
+      transform: scale(1.22);
+      border-color: #ffffff;
+      box-shadow: 0 0 16px var(--swatch-color, #ff4797);
+    }
+
+    .toolbar-divider { width: 1px; height: 28px; background: rgba(255, 255, 255, 0.15); margin: 0 4px; }
+
+    /* ═══════════════════════════════════════════════════
+       SPATIAL SCREENS & CARDS
+       ═══════════════════════════════════════════════════ */
+    .screen {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .screen.active { opacity: 1; pointer-events: auto; }
+
+    /* Loading Screen */
+    #screen-loading h1 {
+      font-size: 2.8rem; font-weight: 700;
+      background: linear-gradient(135deg, #ffffff 30%, var(--accent-pink) 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 12px;
+    }
+    #screen-loading p { color: var(--text-muted); font-size: 1.1rem; font-weight: 400; }
+
+    /* Calibration Screen */
+    #screen-calibration h1 {
+      font-size: 3.8rem; font-weight: 800;
+      background: linear-gradient(135deg, #ffffff 0%, rgba(255, 255, 255, 0.7) 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 16px;
+      letter-spacing: -0.02em;
+    }
+    #screen-calibration p {
+      font-size: 1.25rem; color: var(--text-muted); font-weight: 400;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(16px);
+      padding: 12px 32px; border-radius: 100px;
+      margin-bottom: 24px;
+    }
+    .wave-icon {
+      font-size: 5rem; margin-bottom: 16px;
+      animation: waveAnim 2.2s infinite ease-in-out;
+      filter: drop-shadow(0 0 20px rgba(255, 71, 151, 0.4));
+      display: inline-block;
+    }
+    @keyframes waveAnim { 0%, 100% { transform: rotate(-12deg) scale(1); } 50% { transform: rotate(12deg) scale(1.1); } }
+
+    /* Menu Screen */
+    .menu-title {
+      font-size: 3.2rem; font-weight: 800;
+      background: linear-gradient(135deg, #ffffff 40%, rgba(255,255,255,0.6) 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 48px;
+      letter-spacing: -0.02em;
+    }
+    .menu-cards { display: flex; gap: 32px; }
+
+    .menu-card {
+      width: 250px; height: 320px;
+      background: var(--glass-bg);
+      backdrop-filter: blur(32px) saturate(180%);
+      -webkit-backdrop-filter: blur(32px) saturate(180%);
+      border: 1px solid var(--glass-border);
+      border-radius: 36px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      box-shadow: var(--glass-shadow);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      cursor: pointer;
+      position: relative; overflow: hidden;
+      pointer-events: auto;
+    }
+    .menu-card::before {
+      content: ''; position: absolute; inset: 0;
+      background: radial-gradient(circle at 50% 0%, var(--card-glow, rgba(0, 240, 255, 0.15)), transparent 70%);
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .menu-card:hover, .menu-card.hovered {
+      transform: translateY(-12px) scale(1.05);
+      border-color: rgba(255, 255, 255, 0.35);
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6), 0 0 30px var(--card-glow, rgba(0, 240, 255, 0.3));
+    }
+    .menu-card:hover::before, .menu-card.hovered::before { opacity: 1; }
+
+    .menu-card-icon { font-size: 5rem; margin-bottom: 16px; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.3)); }
+    .menu-card-title { font-size: 1.45rem; font-weight: 700; color: #ffffff; letter-spacing: -0.01em; }
+    .menu-card-desc { font-size: 0.82rem; color: var(--text-muted); margin-top: 6px; font-weight: 400; text-align: center; padding: 0 16px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+
+  <div id="webcam-container">
+    <video id="webcam" autoplay playsinline muted></video>
+  </div>
+  
+  <canvas id="canvas"></canvas>
+
+  <div id="ui-layer">
+    <!-- Top Bar Navigation -->
+    <div class="top-bar">
+      <div style="display:flex; align-items:center; gap:16px;">
+        <div id="btn-camera" class="glass-pill hover-target" data-action="toggle-camera">
+          <span class="icon">📷</span> <span class="text">Hide Camera</span>
+        </div>
+        <div id="btn-skeleton" class="glass-pill hover-target" data-action="toggle-skeleton">
+          <span class="icon">💀</span> <span class="text">Skeleton On</span>
+        </div>
+        <div id="btn-switch-hand" class="glass-pill hover-target" data-action="switch-hand" title="Click to lock or switch active hand">
+          <span class="icon">🔒</span> <span class="text">Lock Hand</span>
+        </div>
+        <div class="status-badge" id="status-badge">
+          <div class="status-dot" id="status-dot"></div>
+          <span id="status-text">Starting AI Tracking...</span>
+        </div>
+      </div>
+      
+      <div id="hud-score" class="hud-badge">Score: 0</div>
+      
+      <div id="btn-menu" class="glass-pill hover-target" data-action="go-menu" style="display:none;">
+        <span class="icon">🏠</span> <span class="text">Main Menu</span>
+      </div>
+    </div>
+
+    <!-- Error Toast Notification -->
+    <div id="error-toast" style="display:none; position:fixed; top:24px; left:50%; transform:translateX(-50%); background:rgba(235, 50, 80, 0.95); color:white; padding:12px 28px; border-radius:100px; font-weight:600; font-size:0.95rem; z-index:9999; box-shadow:0 10px 30px rgba(0,0,0,0.5); backdrop-filter:blur(16px); pointer-events:auto; text-align:center;">
+    </div>
+
+    <!-- Floating Dock (Paint & Flower Modes) -->
+    <div id="paint-toolbar">
+      <div id="swatch-container" style="display:flex; gap:10px;">
+        <!-- Swatches dynamically inserted based on mode -->
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <button class="glass-pill hover-target" id="btn-physics-mode" data-action="toggle-physics-mode" title="Toggle Anchor / Dynamic Physics">
+        <span id="mode-icon">🪐</span> <span id="mode-text">Dynamic</span>
+      </button>
+
+      <button class="glass-pill hover-target" id="btn-clear" data-action="clear-canvas" title="Clear Canvas">
+        <span>🗑️</span>
+      </button>
+    </div>
+
+    <!-- Loading Screen -->
+    <div id="screen-loading" class="screen active">
+      <h1>Spatial Paint & Flower Garden</h1>
+      <p id="loading-msg">Requesting camera access & loading AI models...</p>
+    </div>
+
+    <!-- Calibration / Wake Screen -->
+    <div id="screen-calibration" class="screen">
+      <div class="wave-icon">👋</div>
+      <h1>Wave to Start</h1>
+      <p>Wave your hand or click anywhere to begin</p>
+      <button class="glass-pill hover-target" data-action="go-menu" style="margin-top:10px; font-size:1.1rem; padding:12px 32px;">
+        <span>✨ Enter Playground</span>
+      </button>
+    </div>
+
+    <!-- Main Menu -->
+    <div id="screen-menu" class="screen">
+      <h1 class="menu-title">Select Activity</h1>
+      <div class="menu-cards">
+        <!-- Card 1: Flower Garden -->
+        <div class="menu-card hover-target" data-action="start-flowers" style="--card-glow: rgba(255, 71, 151, 0.4)">
+          <div class="menu-card-icon">🌸</div>
+          <div class="menu-card-title">Flower Garden</div>
+          <div class="menu-card-desc">Paint blooming Dahlias & flowers with pinch gestures</div>
+        </div>
+
+        <!-- Card 2: Physics Paint -->
+        <div class="menu-card hover-target" data-action="start-paint" style="--card-glow: rgba(0, 240, 255, 0.35)">
+          <div class="menu-card-icon">🎨</div>
+          <div class="menu-card-title">Physics Paint</div>
+          <div class="menu-card-desc">Draw neon rigid-body strokes that tumble & bounce</div>
+        </div>
+
+        <!-- Card 3: Bubble Pop -->
+        <div class="menu-card hover-target" data-action="start-bubbles" style="--card-glow: rgba(255, 183, 3, 0.35)">
+          <div class="menu-card-icon">🫧</div>
+          <div class="menu-card-title">Bubble Pop</div>
+          <div class="menu-card-desc">Poke and pop floating bubbles with satisfying particle bursts</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MediaPipe Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <script>
+    function showErrorToast(msg) {
+      const toast = document.getElementById('error-toast');
+      if (toast) {
+        toast.textContent = msg;
+        toast.style.display = 'block';
+        setTimeout(() => { toast.style.display = 'none'; }, 6000);
+      }
+    }
+
+    window.onerror = function(msg, url, line) {
+      console.error('Captured Global Error:', msg, 'Line:', line);
+      showErrorToast(`Notice: ${msg}`);
+      return false;
+    };
+
+    window.onunhandledrejection = function(e) {
+      console.error('Unhandled Promise Rejection:', e.reason);
+      const msg = e.reason?.message || e.reason || 'Async operation notice';
+      showErrorToast(`Notice: ${msg}`);
+    };
+
+    /* ═══════════════════════════════════════════════════════════════
+       APP STATE & CONFIG
+       ═══════════════════════════════════════════════════════════════ */
+    const STATES = { LOADING: 0, CALIBRATION: 1, MENU: 2, FREE_PAINT: 3, BUBBLE_POP: 4, FLOWER_GARDEN: 5 };
+    let currentState = STATES.LOADING;
+    let cameraVisible = true;
+    let showSkeleton = true;
+    let score = 0;
+
+    const CONFIG = {
+      HOVER_TIME_MS: 900,
+      PINCH_PIXEL_THRESHOLD: 48, // in canvas pixels
+      PINCH_RELEASE_PIXEL_THRESHOLD: 65,
+      WAVE_THRESHOLD: 2,
+      MIN_POINT_DIST: 16,
+      MAX_POINTS_PER_STROKE: 40,
+      MAX_STROKES: 35,
+      MAX_FLOWERS: 75,
+      GRAVITY: 0.28,
+      AIR_RESISTANCE: 0.985,
+      ROTATIONAL_DAMPING: 0.96
+    };
+
+    // DOM References
+    const $webcam = document.getElementById('webcam');
+    const $canvas = document.getElementById('canvas');
+    const ctx = $canvas.getContext('2d');
+    const $btnCamera = document.getElementById('btn-camera');
+    const $btnSkeleton = document.getElementById('btn-skeleton');
+    const $btnSwitchHand = document.getElementById('btn-switch-hand');
+    const $btnMenu = document.getElementById('btn-menu');
+    const $hudScore = document.getElementById('hud-score');
+    const $paintToolbar = document.getElementById('paint-toolbar');
+    const $swatchContainer = document.getElementById('swatch-container');
+    const $modeIcon = document.getElementById('mode-icon');
+    const $modeText = document.getElementById('mode-text');
+    const $statusDot = document.getElementById('status-dot');
+    const $statusText = document.getElementById('status-text');
+    const $loadingMsg = document.getElementById('loading-msg');
+
+    const screens = {
+      [STATES.LOADING]: document.getElementById('screen-loading'),
+      [STATES.CALIBRATION]: document.getElementById('screen-calibration'),
+      [STATES.MENU]: document.getElementById('screen-menu'),
+    };
+
+    /* ═══════════════════════════════════════════════════════════════
+       DAHLIA FLOWER ASSET (Image + Procedural Fallback)
+       ═══════════════════════════════════════════════════════════════ */
+    let dahliaImg = new Image();
+    let dahliaCanvas = document.createElement('canvas');
+    let dahliaCtx = dahliaCanvas.getContext('2d');
+    let isDahliaLoaded = false;
+
+    dahliaImg.src = './dahlia.jpg';
+    dahliaImg.onload = () => {
+      try {
+        dahliaCanvas.width = dahliaImg.width;
+        dahliaCanvas.height = dahliaImg.height;
+        dahliaCtx.drawImage(dahliaImg, 0, 0);
+
+        const imgData = dahliaCtx.getImageData(0, 0, dahliaCanvas.width, dahliaCanvas.height);
+        const data = imgData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i], g = data[i+1], b = data[i+2];
+          if (r < 35 && g < 35 && b < 35) {
+            data[i+3] = 0;
+          }
+        }
+        dahliaCtx.putImageData(imgData, 0, 0);
+        isDahliaLoaded = true;
+      } catch (err) {
+        console.warn('Image loaded directly without pixel transparency.', err);
+        isDahliaLoaded = true;
+      }
+    };
+    dahliaImg.onerror = () => {
+      console.warn('Dahlia image asset not found; using high-res procedural Dahlia.');
+      isDahliaLoaded = false;
+    };
+
+    /* ═══════════════════════════════════════════════════════════════
+       COORDINATE MAPPING (object-fit: cover exact alignment)
+       ═══════════════════════════════════════════════════════════════ */
+    function videoToCanvas(normalizedX, normalizedY) {
+      const cw = $canvas.width;
+      const ch = $canvas.height;
+      const vw = $webcam.videoWidth || 640;
+      const vh = $webcam.videoHeight || 480;
+      
+      const canvasRatio = cw / ch;
+      const videoRatio = vw / vh;
+      
+      let scale, offsetX = 0, offsetY = 0;
+      
+      if (canvasRatio > videoRatio) {
+        scale = cw / vw;
+        offsetY = (vh * scale - ch) / 2;
+      } else {
+        scale = ch / vh;
+        offsetX = (vw * scale - cw) / 2;
+      }
+      
+      // Mirrored X for natural mirror interaction
+      const screenX = (1 - normalizedX) * vw * scale - offsetX;
+      const screenY = normalizedY * vh * scale - offsetY;
+      
+      return { x: screenX, y: screenY };
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       GESTURE ENGINE & SMOOTHED POINTER
+       ═══════════════════════════════════════════════════════════════ */
+    let handLandmarks = null;
+    let rawHandPos = { x: -100, y: -100 };
+    let smoothHandPos = { x: -100, y: -100 };
+    let currentGesture = 'none';
+
+    // Single-Hand Sticky Locking Engine
+    let lockedHandedness = null;
+    let lastLockedWrist = null;
+    let lockLostFrames = 0;
+    const MAX_LOCK_LOST_FRAMES = 16;
+
+    function selectLockedHand(results) {
+      if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+        lockLostFrames++;
+        if (lockLostFrames > MAX_LOCK_LOST_FRAMES) {
+          lastLockedWrist = null;
+          lockedHandedness = null;
+          if ($btnSwitchHand) {
+            $btnSwitchHand.querySelector('.text').textContent = 'Waiting Hand...';
+            $btnSwitchHand.classList.remove('active');
+          }
+        }
+        return null;
+      }
+
+      const hands = results.multiHandLandmarks;
+      const handednessList = results.multiHandedness || [];
+
+      // If no hand is currently locked, lock onto the first detected hand
+      if (!lastLockedWrist) {
+        lockedHandedness = handednessList[0]?.label || 'Hand';
+        lastLockedWrist = { x: hands[0][0].x, y: hands[0][0].y };
+        lockLostFrames = 0;
+        updateLockedHandButton();
+        return hands[0];
+      }
+
+      // Find the hand that matches our locked hand position and handedness
+      let bestIdx = 0;
+      let bestScore = Infinity;
+
+      for (let i = 0; i < hands.length; i++) {
+        const wrist = hands[i][0];
+        const d = Math.hypot(wrist.x - lastLockedWrist.x, wrist.y - lastLockedWrist.y);
+        const label = handednessList[i]?.label;
+        
+        // Strong penalty if handedness doesn't match so it never jumps to the other hand
+        const penalty = (label && lockedHandedness && label !== lockedHandedness) ? 0.45 : 0;
+        const score = d + penalty;
+
+        if (score < bestScore) {
+          bestScore = score;
+          bestIdx = i;
+        }
+      }
+
+      const chosenHand = hands[bestIdx];
+      lastLockedWrist = { x: chosenHand[0].x, y: chosenHand[0].y };
+      if (handednessList[bestIdx]?.label) {
+        lockedHandedness = handednessList[bestIdx].label;
+      }
+      lockLostFrames = 0;
+      updateLockedHandButton();
+
+      return chosenHand;
+    }
+
+    function updateLockedHandButton() {
+      if (!$btnSwitchHand) return;
+      const label = lockedHandedness === 'Left' ? 'Right Hand' : (lockedHandedness === 'Right' ? 'Left Hand' : 'Hand');
+      $btnSwitchHand.querySelector('.text').textContent = `🔒 ${label} Locked`;
+      $btnSwitchHand.classList.add('active');
+    }
+    
+    // Mouse Fallback
+    let mousePos = { x: -100, y: -100 };
+    let isMouseDown = false;
+    let useMouseFallback = false;
+
+    // Hover Selection
+    let activeHoverTarget = null;
+    let hoverStartTime = 0;
+    let hoverTargets = [];
+
+    // Wave Calibration
+    let waveTracker = { lastX: 0, direction: 0, flips: 0, lastFlipTime: 0 };
+
+    // Paint & Flower State
+    let strokes = [];
+    let currentStroke = null;
+    let flowers = [];
+    let activeFlowerType = 'dahlia';
+    let isPinching = false;
+    let paintColor = '#00f0ff';
+    let drawStatic = false;
+
+    // Bubble Pop State
+    let bubbles = [];
+    let particles = [];
+
+    function dist(p1, p2) { return Math.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y)**2); }
+
+    function resizeCanvas() {
+      $canvas.width = window.innerWidth;
+      $canvas.height = window.innerHeight;
+      updateHoverTargets();
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    function updateHoverTargets() {
+      hoverTargets = [];
+      document.querySelectorAll('.hover-target').forEach(el => {
+        if (el.offsetParent !== null) {
+          hoverTargets.push({
+            element: el,
+            rect: el.getBoundingClientRect(),
+            action: el.dataset.action,
+            flowerType: el.dataset.flowerType,
+            color: el.dataset.color
+          });
+        }
+      });
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       MOUSE EVENT LISTENERS
+       ═══════════════════════════════════════════════════════════════ */
+    window.addEventListener('mousemove', (e) => {
+      mousePos.x = e.clientX;
+      mousePos.y = e.clientY;
+    });
+
+    window.addEventListener('mousedown', (e) => {
+      isMouseDown = true;
+      if (currentState === STATES.CALIBRATION) {
+        changeState(STATES.MENU);
+      }
+    });
+
+    window.addEventListener('mouseup', () => { isMouseDown = false; });
+
+    // Global direct click listener for instant response
+    document.addEventListener('click', (e) => {
+      const target = e.target.closest('.hover-target');
+      if (target) {
+        if (target.dataset.action) {
+          executeAction(target.dataset.action);
+        } else if (target.dataset.flowerType) {
+          document.querySelectorAll('.color-swatch').forEach(el => el.classList.remove('active'));
+          target.classList.add('active');
+          activeFlowerType = target.dataset.flowerType;
+        } else if (target.dataset.color) {
+          document.querySelectorAll('.color-swatch').forEach(el => el.classList.remove('active'));
+          target.classList.add('active');
+          paintColor = target.dataset.color;
+        }
+      }
+    });
+
+    /* ═══════════════════════════════════════════════════════════════
+       GESTURE DETECTION IN SCREEN SPACE (PIXEL DISTANCE)
+       ═══════════════════════════════════════════════════════════════ */
+    function detectGesture(landmarks) {
+      if (!landmarks) return 'none';
+      const thumb = landmarks[4];
+      const index = landmarks[8];
+      
+      const thumbPt = videoToCanvas(thumb.x, thumb.y);
+      const indexPt = videoToCanvas(index.x, index.y);
+      const pixelDist = Math.hypot(thumbPt.x - indexPt.x, thumbPt.y - indexPt.y);
+
+      const threshold = isPinching ? CONFIG.PINCH_RELEASE_PIXEL_THRESHOLD : CONFIG.PINCH_PIXEL_THRESHOLD;
+      if (pixelDist < threshold) return 'pinch';
+
+      const wrist = landmarks[0];
+      const indexExtended = dist(landmarks[8], wrist) > dist(landmarks[6], wrist);
+      const middleCurled = dist(landmarks[12], wrist) < dist(landmarks[10], wrist);
+
+      if (indexExtended && middleCurled) return 'point';
+      return 'none';
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       HAND SKELETON RENDERER
+       ═══════════════════════════════════════════════════════════════ */
+    const HAND_CONNECTIONS = [
+      [0,1],[1,2],[2,3],[3,4],
+      [0,5],[5,6],[6,7],[7,8],
+      [0,9],[9,10],[10,11],[11,12],
+      [0,13],[13,14],[14,15],[15,16],
+      [0,17],[17,18],[18,19],[19,20],
+      [5,9],[9,13],[13,17]
+    ];
+
+    function drawSkeleton(ctx, landmarks) {
+      if (!showSkeleton || !landmarks) return;
+      ctx.save();
+      
+      // Draw neon bones
+      ctx.strokeStyle = isPinching ? 'rgba(255, 71, 151, 0.65)' : 'rgba(0, 240, 255, 0.45)';
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+
+      for (const [a, b] of HAND_CONNECTIONS) {
+        const pa = videoToCanvas(landmarks[a].x, landmarks[a].y);
+        const pb = videoToCanvas(landmarks[b].x, landmarks[b].y);
+        ctx.beginPath();
+        ctx.moveTo(pa.x, pa.y);
+        ctx.lineTo(pb.x, pb.y);
+        ctx.stroke();
+      }
+
+      // Draw neon joints
+      for (let i = 0; i < landmarks.length; i++) {
+        const pt = videoToCanvas(landmarks[i].x, landmarks[i].y);
+        const isTip = (i === 4 || i === 8 || i === 12 || i === 16 || i === 20);
+        
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, isTip ? 5 : 3, 0, Math.PI * 2);
+        ctx.fillStyle = isTip ? (isPinching ? '#ff4797' : '#00f0ff') : 'rgba(255, 255, 255, 0.7)';
+        ctx.fill();
+      }
+
+      // Draw Lock Halo around wrist of locked hand
+      const wrist = videoToCanvas(landmarks[0].x, landmarks[0].y);
+      ctx.beginPath();
+      ctx.arc(wrist.x, wrist.y, 22, 0, Math.PI * 2);
+      ctx.strokeStyle = isPinching ? 'rgba(255, 71, 151, 0.85)' : 'rgba(0, 240, 255, 0.85)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 4]);
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.font = '700 11px Outfit, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('🔒 LOCKED', wrist.x, wrist.y + 36);
+
+      ctx.restore();
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       FLOWER CLASS (PHYSICS BLOOMS)
+       ═══════════════════════════════════════════════════════════════ */
+    class Flower {
+      constructor(x, y, type = 'dahlia', size = 68, isStatic = false) {
+        this.x = x; this.y = y;
+        this.type = type;
+        this.size = size;
+        this.rotation = Math.random() * Math.PI * 2;
+        this.omega = (Math.random() - 0.5) * 0.04;
+        this.vx = (Math.random() - 0.5) * 1.5;
+        this.vy = (Math.random() - 0.5) * 1.0;
+        this.isStatic = isStatic;
+      }
+
+      update() {
+        if (this.isStatic) return;
+
+        this.vy += CONFIG.GRAVITY * 0.75;
+        this.vx *= CONFIG.AIR_RESISTANCE;
+        this.vy *= CONFIG.AIR_RESISTANCE;
+        this.rotation += this.omega;
+
+        this.x += this.vx;
+        this.y += this.vy;
+
+        const ground = $canvas.height - 35;
+        if (this.y > ground) {
+          this.y = ground;
+          this.vy = -this.vy * 0.35;
+          this.vx *= 0.8;
+          this.omega *= 0.6;
+          
+          if (Math.abs(this.vy) < 0.2) {
+            this.isStatic = true;
+          }
+        }
+      }
+
+      draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation);
+
+        if (this.type === 'dahlia') {
+          if (isDahliaLoaded) {
+            ctx.drawImage(dahliaCanvas, -this.size/2, -this.size/2, this.size, this.size);
+          } else {
+            drawProceduralDahlia(ctx, this.size);
+          }
+        } else {
+          drawProceduralFlower(ctx, this.type, this.size);
+        }
+        ctx.restore();
+      }
+    }
+
+    function drawProceduralDahlia(ctx, size) {
+      const r = size / 2;
+      ctx.save();
+      const layers = [
+        { count: 18, rad: r * 0.95, w: r * 0.28, h: r * 0.44, col: '#fdfbfd', tip: '#f9bfdb' },
+        { count: 16, rad: r * 0.78, w: r * 0.26, h: r * 0.40, col: '#fef5f9', tip: '#f49ec7' },
+        { count: 14, rad: r * 0.62, w: r * 0.23, h: r * 0.36, col: '#fff0f6', tip: '#ee6ea8' },
+        { count: 12, rad: r * 0.46, w: r * 0.20, h: r * 0.32, col: '#ffe6f1', tip: '#e5458e' },
+        { count: 10, rad: r * 0.30, w: r * 0.17, h: r * 0.26, col: '#ffd8eb', tip: '#d82276' }
+      ];
+
+      for (const layer of layers) {
+        const step = (Math.PI * 2) / layer.count;
+        for (let i = 0; i < layer.count; i++) {
+          ctx.save();
+          ctx.rotate(i * step);
+          ctx.translate(0, -layer.rad * 0.58);
+
+          const grad = ctx.createLinearGradient(0, layer.h * 0.5, 0, -layer.h * 0.5);
+          grad.addColorStop(0, layer.col);
+          grad.addColorStop(0.65, layer.col);
+          grad.addColorStop(1, layer.tip);
+
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, layer.w * 0.5, layer.h * 0.5, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      // Dahlia Center
+      const cGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, r * 0.18);
+      cGrad.addColorStop(0, '#8ec03f');
+      cGrad.addColorStop(0.55, '#ffd700');
+      cGrad.addColorStop(1, '#d82276');
+      ctx.fillStyle = cGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawProceduralFlower(ctx, type, size) {
+      const r = size / 2;
+      ctx.save();
+
+      if (type === 'cherry') {
+        ctx.fillStyle = '#ffb7c5';
+        for (let i = 0; i < 5; i++) {
+          ctx.rotate((Math.PI * 2) / 5);
+          ctx.beginPath();
+          ctx.ellipse(0, -r*0.5, r*0.35, r*0.55, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(0, 0, r*0.22, 0, Math.PI*2); ctx.fill();
+      } else if (type === 'sunflower') {
+        ctx.fillStyle = '#ffb703';
+        for (let i = 0; i < 12; i++) {
+          ctx.rotate((Math.PI * 2) / 12);
+          ctx.beginPath();
+          ctx.ellipse(0, -r*0.55, r*0.2, r*0.5, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#3a1e05';
+        ctx.beginPath(); ctx.arc(0, 0, r*0.35, 0, Math.PI*2); ctx.fill();
+      } else {
+        ctx.fillStyle = '#ff0055';
+        for (let i = 0; i < 6; i++) {
+          ctx.rotate((Math.PI * 2) / 6);
+          ctx.beginPath();
+          ctx.arc(0, -r*0.3, r*0.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#ff6699';
+        ctx.beginPath(); ctx.arc(0, 0, r*0.3, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       HIGH-PERFORMANCE STROKE RIGID BODY PHYSICS
+       ═══════════════════════════════════════════════════════════════ */
+    class Stroke {
+      constructor(color, width, isStatic) {
+        this.points = [];
+        this.worldPoints = [];
+        this.color = color;
+        this.width = width;
+        this.isStatic = isStatic;
+        this.completed = false;
+        this.sleepCounter = 0;
+
+        this.x = 0; this.y = 0;
+        this.vx = 0; this.vy = 0;
+        this.theta = 0; this.omega = 0;
+
+        this.m = 1; this.invM = 1;
+        this.I = 1; this.invI = 1;
+        this.bounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+      }
+
+      addPoint(x, y) {
+        if (this.points.length > 0) {
+          const last = this.points[this.points.length - 1];
+          if ((x - last.x)**2 + (y - last.y)**2 < CONFIG.MIN_POINT_DIST**2) return;
+        }
+        if (this.points.length >= CONFIG.MAX_POINTS_PER_STROKE) return;
+
+        this.points.push({ x, y });
+        this.worldPoints.push({ x, y });
+      }
+
+      complete() {
+        this.completed = true;
+        if (this.points.length < 2) return;
+
+        let sumX = 0, sumY = 0;
+        for (const p of this.points) { sumX += p.x; sumY += p.y; }
+        this.x = sumX / this.points.length;
+        this.y = sumY / this.points.length;
+
+        this.points = this.points.map(p => ({ x: p.x - this.x, y: p.y - this.y }));
+
+        this.m = Math.max(1, this.points.length * 0.5);
+        let inertiaSum = 0;
+        for (const r of this.points) { inertiaSum += (r.x * r.x + r.y * r.y); }
+        this.I = Math.max(25, inertiaSum * 0.5);
+
+        if (this.isStatic) {
+          this.invM = 0; this.invI = 0;
+        } else {
+          this.invM = 1 / this.m; this.invI = 1 / this.I;
+        }
+
+        this.updateWorldPoints();
+      }
+
+      updateWorldPoints() {
+        const cos = Math.cos(this.theta);
+        const sin = Math.sin(this.theta);
+
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+
+        for (let i = 0; i < this.points.length; i++) {
+          const r = this.points[i];
+          const wx = this.x + r.x * cos - r.y * sin;
+          const wy = this.y + r.x * sin + r.y * cos;
+          
+          this.worldPoints[i] = { x: wx, y: wy };
+
+          if (wx < minX) minX = wx; if (wx > maxX) maxX = wx;
+          if (wy < minY) minY = wy; if (wy > maxY) maxY = wy;
+        }
+
+        const pad = this.width / 2;
+        this.bounds.minX = minX - pad; this.bounds.maxX = maxX + pad;
+        this.bounds.minY = minY - pad; this.bounds.maxY = maxY + pad;
+      }
+
+      draw(ctx) {
+        if (this.worldPoints.length < 2) return;
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        ctx.strokeStyle = this.color;
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = this.width + 6;
+        this._drawPath(ctx);
+        ctx.stroke();
+
+        ctx.globalAlpha = 1.0;
+        ctx.lineWidth = this.width;
+        this._drawPath(ctx);
+        ctx.stroke();
+
+        ctx.restore();
+      }
+
+      _drawPath(ctx) {
+        ctx.beginPath();
+        ctx.moveTo(this.worldPoints[0].x, this.worldPoints[0].y);
+        for (let i = 1; i < this.worldPoints.length; i++) {
+          const prev = this.worldPoints[i - 1];
+          const curr = this.worldPoints[i];
+          ctx.quadraticCurveTo(prev.x, prev.y, (prev.x + curr.x) / 2, (prev.y + curr.y) / 2);
+        }
+        const last = this.worldPoints[this.worldPoints.length - 1];
+        ctx.lineTo(last.x, last.y);
+      }
+    }
+
+    function updatePhysics() {
+      // Strokes Physics
+      for (const s of strokes) {
+        if (s.isStatic) continue;
+
+        s.vy += CONFIG.GRAVITY;
+        s.vx *= CONFIG.AIR_RESISTANCE;
+        s.vy *= CONFIG.AIR_RESISTANCE;
+        s.omega *= CONFIG.ROTATIONAL_DAMPING;
+
+        if (Math.abs(s.vx) < 0.15 && Math.abs(s.vy) < 0.15 && Math.abs(s.omega) < 0.01) {
+          s.sleepCounter++;
+          if (s.sleepCounter > 25) {
+            s.isStatic = true;
+            s.invM = 0; s.invI = 0; s.vx = 0; s.vy = 0; s.omega = 0;
+          }
+        } else {
+          s.sleepCounter = 0;
+        }
+      }
+
+      for (const s of strokes) resolveScreenBoundaries(s);
+
+      // Fast AABB collision pruning
+      for (let i = 0; i < strokes.length; i++) {
+        for (let j = i + 1; j < strokes.length; j++) {
+          const bodyA = strokes[i];
+          const bodyB = strokes[j];
+
+          if (bodyA.isStatic && bodyB.isStatic) continue;
+
+          if (bodyA.bounds.minX <= bodyB.bounds.maxX && bodyA.bounds.maxX >= bodyB.bounds.minX &&
+              bodyA.bounds.minY <= bodyB.bounds.maxY && bodyA.bounds.maxY >= bodyB.bounds.minY) {
+            resolvePolylineCollision(bodyA, bodyB);
+          }
+        }
+      }
+
+      for (const s of strokes) {
+        if (s.isStatic) continue;
+        s.x += s.vx;
+        s.y += s.vy;
+        s.theta += s.omega;
+        s.updateWorldPoints();
+      }
+
+      // Flowers Physics
+      for (const fl of flowers) fl.update();
+    }
+
+    function resolveScreenBoundaries(s) {
+      if (s.isStatic) return;
+
+      const groundY = $canvas.height - 24;
+
+      for (let i = 0; i < s.worldPoints.length; i++) {
+        const p = s.worldPoints[i];
+
+        if (p.y > groundY) {
+          s.y -= (p.y - groundY);
+          s.updateWorldPoints();
+
+          const rx = p.x - s.x;
+          const vcy = s.vy + s.omega * rx;
+          
+          if (-vcy < 0) {
+            const k = s.invM + (-rx * -rx) * s.invI;
+            const j = -(1 + 0.35) * -vcy / k;
+            s.vy += j * (-1) * s.invM;
+            s.omega += j * (-rx) * s.invI;
+          }
+        }
+      }
+    }
+
+    function resolvePolylineCollision(bodyA, bodyB) {
+      const targetDist = (bodyA.width + bodyB.width) / 2;
+      const targetDistSq = targetDist * targetDist;
+
+      checkPointsAgainstSegments(bodyA, bodyB, targetDist, targetDistSq);
+      checkPointsAgainstSegments(bodyB, bodyA, targetDist, targetDistSq);
+    }
+
+    function checkPointsAgainstSegments(bodyP, bodyS, targetDist, targetDistSq) {
+      const numPoints = bodyP.worldPoints.length;
+      const numSegs = bodyS.worldPoints.length;
+      if (numPoints === 0 || numSegs < 2) return;
+
+      for (let i = 0; i < numPoints; i++) {
+        const P = bodyP.worldPoints[i];
+
+        let minDistSq = Infinity;
+        let closestQ = null;
+        let nx = 0, ny = 0;
+
+        for (let j = 0; j < numSegs - 1; j++) {
+          const V1 = bodyS.worldPoints[j];
+          const V2 = bodyS.worldPoints[j + 1];
+
+          const abx = V2.x - V1.x;
+          const aby = V2.y - V1.y;
+          const ab2 = abx * abx + aby * aby;
+          if (ab2 < 0.01) continue;
+
+          let t = ((P.x - V1.x) * abx + (P.y - V1.y) * aby) / ab2;
+          t = Math.max(0, Math.min(1, t));
+
+          const Qx = V1.x + t * abx;
+          const Qy = V1.y + t * aby;
+
+          const dx = P.x - Qx;
+          const dy = P.y - Qy;
+          const distSq = dx * dx + dy * dy;
+
+          if (distSq < minDistSq) {
+            minDistSq = distSq;
+            closestQ = { x: Qx, y: Qy };
+            nx = dx; ny = dy;
+          }
+        }
+
+        if (minDistSq < targetDistSq && minDistSq > 0.0001) {
+          const dist = Math.sqrt(minDistSq);
+          nx /= dist; ny /= dist;
+          const depth = targetDist - dist;
+
+          const totalInvMass = bodyP.invM + bodyS.invM;
+          if (totalInvMass > 0) {
+            const moveX = nx * depth * 0.5;
+            const moveY = ny * depth * 0.5;
+
+            if (!bodyP.isStatic) {
+              bodyP.x += moveX * (bodyP.invM / totalInvMass);
+              bodyP.y += moveY * (bodyP.invM / totalInvMass);
+              bodyP.updateWorldPoints();
+            }
+            if (!bodyS.isStatic) {
+              bodyS.x -= moveX * (bodyS.invM / totalInvMass);
+              bodyS.y -= moveY * (bodyS.invM / totalInvMass);
+              bodyS.updateWorldPoints();
+            }
+          }
+
+          const rxP = P.x - bodyP.x;
+          const ryP = P.y - bodyP.y;
+          const rxS = closestQ.x - bodyS.x;
+          const ryS = closestQ.y - bodyS.y;
+
+          const rvx = (bodyP.vx - bodyP.omega * ryP) - (bodyS.vx - bodyS.omega * ryS);
+          const rvy = (bodyP.vy + bodyP.omega * rxP) - (bodyS.vy + bodyS.omega * rxS);
+
+          const vn = rvx * nx + rvy * ny;
+
+          if (vn < 0) {
+            const rnP = rxP * ny - ryP * nx;
+            const rnS = rxS * ny - ryS * nx;
+            const denom = bodyP.invM + bodyS.invM + (rnP * rnP) * bodyP.invI + (rnS * rnS) * bodyS.invI;
+            
+            if (denom > 0) {
+              const j = -(1.25) * vn / denom;
+              if (!bodyP.isStatic) {
+                bodyP.vx += j * nx * bodyP.invM;
+                bodyP.vy += j * ny * bodyP.invM;
+                bodyP.omega += j * rnP * bodyP.invI;
+              }
+              if (!bodyS.isStatic) {
+                bodyS.vx -= j * nx * bodyS.invM;
+                bodyS.vy -= j * ny * bodyS.invM;
+                bodyS.omega -= j * rnS * bodyS.invI;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       ACTIONS & TOOLBAR SWATCH BUILDER
+       ═══════════════════════════════════════════════════════════════ */
+    function buildToolbarSwatches(mode) {
+      $swatchContainer.innerHTML = '';
+      if (mode === STATES.FLOWER_GARDEN) {
+        const flowerSwatches = [
+          { type: 'dahlia', label: '🌺' },
+          { type: 'cherry', label: '🌸' },
+          { type: 'sunflower', label: '🌻' },
+          { type: 'rose', label: '🌹' }
+        ];
+        flowerSwatches.forEach((s) => {
+          const div = document.createElement('div');
+          div.className = `color-swatch hover-target ${activeFlowerType === s.type ? 'active' : ''}`;
+          div.textContent = s.label;
+          div.dataset.flowerType = s.type;
+          $swatchContainer.appendChild(div);
+        });
+      } else {
+        const colorSwatches = ['#00f0ff', '#ff4797', '#9d4edd', '#00f5d4', '#ffb703', '#ffffff'];
+        colorSwatches.forEach((c) => {
+          const div = document.createElement('div');
+          div.className = `color-swatch hover-target ${paintColor === c ? 'active' : ''}`;
+          div.style.background = c;
+          div.style.setProperty('--swatch-color', c);
+          div.dataset.color = c;
+          $swatchContainer.appendChild(div);
+        });
+      }
+      updateHoverTargets();
+    }
+
+    function changeState(newState) {
+      Object.values(screens).forEach(s => s?.classList.remove('active'));
+      
+      currentState = newState;
+      if (screens[newState]) screens[newState].classList.add('active');
+
+      const isGameScreen = (newState === STATES.FREE_PAINT || newState === STATES.BUBBLE_POP || newState === STATES.FLOWER_GARDEN);
+      $btnMenu.style.display = isGameScreen ? 'flex' : 'none';
+      $hudScore.style.display = (newState === STATES.BUBBLE_POP) ? 'block' : 'none';
+      
+      const isToolbarScreen = (newState === STATES.FREE_PAINT || newState === STATES.FLOWER_GARDEN);
+      $paintToolbar.classList.toggle('visible', isToolbarScreen);
+      if (isToolbarScreen) buildToolbarSwatches(newState);
+      
+      if (newState === STATES.FREE_PAINT) {
+        strokes = [];
+      } else if (newState === STATES.FLOWER_GARDEN) {
+        flowers = [];
+      } else if (newState === STATES.BUBBLE_POP) {
+        bubbles = []; particles = []; score = 0;
+        updateScore();
+      }
+
+      setTimeout(updateHoverTargets, 80);
+    }
+
+    function executeAction(action) {
+      if (action === 'toggle-camera') {
+        cameraVisible = !cameraVisible;
+        $webcam.classList.toggle('hidden-feed', !cameraVisible);
+        $btnCamera.querySelector('.text').textContent = cameraVisible ? 'Hide Camera' : 'Show Camera';
+      }
+      else if (action === 'toggle-skeleton') {
+        showSkeleton = !showSkeleton;
+        $btnSkeleton.querySelector('.text').textContent = showSkeleton ? 'Skeleton On' : 'Skeleton Off';
+      }
+      else if (action === 'switch-hand') {
+        lastLockedWrist = null;
+        lockedHandedness = null;
+        if ($btnSwitchHand) {
+          $btnSwitchHand.querySelector('.text').textContent = 'Show Hand to Lock';
+          $btnSwitchHand.classList.remove('active');
+        }
+        $statusText.textContent = '🔄 Hand Unlocked — Show Hand to Lock';
+      }
+      else if (action === 'go-menu') changeState(STATES.MENU);
+      else if (action === 'start-paint') changeState(STATES.FREE_PAINT);
+      else if (action === 'start-bubbles') changeState(STATES.BUBBLE_POP);
+      else if (action === 'start-flowers') changeState(STATES.FLOWER_GARDEN);
+      else if (action === 'clear-canvas') { strokes = []; flowers = []; }
+      else if (action === 'toggle-physics-mode') {
+        drawStatic = !drawStatic;
+        $modeIcon.textContent = drawStatic ? '📌' : '🪐';
+        $modeText.textContent = drawStatic ? 'Anchor' : 'Dynamic';
+      }
+    }
+
+    function updateScore() {
+      $hudScore.textContent = `Score: ${score}`;
+      $hudScore.style.transform = 'scale(1.3)';
+      setTimeout(() => $hudScore.style.transform = 'scale(1)', 200);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       BUBBLE POP GAME ENGINE
+       ═══════════════════════════════════════════════════════════════ */
+    function spawnBubble() {
+      bubbles.push({
+        x: Math.random() * $canvas.width,
+        y: $canvas.height + 50,
+        r: 34 + Math.random() * 36,
+        vx: (Math.random() - 0.5) * 1.8,
+        vy: -2.2 - Math.random() * 2.5,
+        color: `hsl(${Math.random() * 360}, 85%, 65%)`
+      });
+    }
+
+    function spawnParticles(x, y, color) {
+      for(let i=0; i<16; i++) {
+        particles.push({
+          x, y,
+          vx: (Math.random() - 0.5) * 11,
+          vy: (Math.random() - 0.5) * 11,
+          life: 1.0,
+          color
+        });
+      }
+    }
+
+    function processBubbles() {
+      if (Math.random() < 0.035) spawnBubble();
+
+      for (let i = bubbles.length - 1; i >= 0; i--) {
+        const b = bubbles[i];
+        b.x += b.vx;
+        b.y += b.vy;
+        b.vx += Math.sin(Date.now() * 0.002 + b.y * 0.01) * 0.04;
+
+        const isPoke = (currentGesture === 'point') || (useMouseFallback && isMouseDown);
+        if (isPoke) {
+          const dx = smoothHandPos.x - b.x;
+          const dy = smoothHandPos.y - b.y;
+          if (Math.sqrt(dx*dx + dy*dy) < b.r + 20) {
+            spawnParticles(b.x, b.y, b.color);
+            bubbles.splice(i, 1);
+            score += 10;
+            updateScore();
+            continue;
+          }
+        }
+
+        if (b.y < -100) bubbles.splice(i, 1);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+        ctx.fillStyle = b.color + '44';
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = b.color;
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.arc(b.x - b.r*0.3, b.y - b.r*0.3, b.r*0.2, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.22;
+        p.life -= 0.025;
+
+        if (p.life <= 0) { particles.splice(i, 1); continue; }
+
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha = 1.0;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       RENDER & INTERPOLATED UPDATE LOOP
+       ═══════════════════════════════════════════════════════════════ */
+    let lastFlowerStampTime = 0;
+
+    function render() {
+      requestAnimationFrame(render);
+      ctx.clearRect(0, 0, $canvas.width, $canvas.height);
+
+      if (handLandmarks && cameraVisible) {
+        useMouseFallback = false;
+        
+        // Draw real-time hand skeleton overlay for immediate feedback!
+        drawSkeleton(ctx, handLandmarks);
+
+        const indexTip = handLandmarks[8];
+        const screenPt = videoToCanvas(indexTip.x, indexTip.y);
+        rawHandPos.x = screenPt.x;
+        rawHandPos.y = screenPt.y;
+        currentGesture = detectGesture(handLandmarks);
+        
+        $statusDot.style.background = (currentGesture === 'pinch') ? '#ff4797' : '#00f0ff';
+        $statusDot.style.boxShadow = `0 0 12px ${(currentGesture === 'pinch') ? '#ff4797' : '#00f0ff'}`;
+        const handLabel = lockedHandedness === 'Left' ? 'Right Hand' : (lockedHandedness === 'Right' ? 'Left Hand' : 'Hand');
+        $statusText.textContent = (currentGesture === 'pinch') 
+          ? `🤏 ${handLabel} Pinching (Drawing)` 
+          : (currentGesture === 'point') 
+          ? `👆 ${handLabel} Pointing (Selecting)` 
+          : `🔒 ${handLabel} Locked & Tracking`;
+      } else {
+        useMouseFallback = true;
+        rawHandPos.x = mousePos.x;
+        rawHandPos.y = mousePos.y;
+        currentGesture = isMouseDown ? 'pinch' : 'point';
+
+        $statusDot.style.background = '#ffb703';
+        $statusDot.style.boxShadow = '0 0 10px #ffb703';
+        $statusText.textContent = '🖱️ Mouse Mode (Move / Click)';
+      }
+
+      if (smoothHandPos.x < 0) { smoothHandPos.x = rawHandPos.x; smoothHandPos.y = rawHandPos.y; }
+      else {
+        smoothHandPos.x += (rawHandPos.x - smoothHandPos.x) * 0.65;
+        smoothHandPos.y += (rawHandPos.y - smoothHandPos.y) * 0.65;
+      }
+
+      // --- CALIBRATION SCREEN ---
+      if (currentState === STATES.CALIBRATION) {
+        if (!useMouseFallback) {
+          const now = Date.now();
+          if (now - waveTracker.lastFlipTime > 2000) waveTracker.flips = 0;
+          
+          const dx = smoothHandPos.x - waveTracker.lastX;
+          if (Math.abs(dx) > 18) {
+            const dir = Math.sign(dx);
+            if (dir !== waveTracker.direction) {
+              waveTracker.direction = dir;
+              waveTracker.flips++;
+              waveTracker.lastFlipTime = now;
+              if (waveTracker.flips >= CONFIG.WAVE_THRESHOLD) changeState(STATES.MENU);
+            }
+          }
+          waveTracker.lastX = smoothHandPos.x;
+        }
+        
+        ctx.beginPath();
+        ctx.arc(smoothHandPos.x, smoothHandPos.y, 18, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255, 71, 151, 0.6)';
+        ctx.fill();
+      }
+
+      // --- ALWAYS DRAW HAND CURSOR & PROCESS HOVER ---
+      if (smoothHandPos.x > 0 && smoothHandPos.y > 0) {
+        let foundTarget = null;
+        for (const target of hoverTargets) {
+          if (smoothHandPos.x >= target.rect.left && smoothHandPos.x <= target.rect.right &&
+              smoothHandPos.y >= target.rect.top && smoothHandPos.y <= target.rect.bottom) {
+            foundTarget = target;
+            break;
+          }
+        }
+
+        if (foundTarget) {
+          if (activeHoverTarget !== foundTarget) {
+            if (activeHoverTarget) activeHoverTarget.element.classList.remove('hovered');
+            activeHoverTarget = foundTarget;
+            hoverStartTime = performance.now();
+            activeHoverTarget.element.classList.add('hovered');
+          }
+
+          const elapsed = performance.now() - hoverStartTime;
+          const progress = Math.min(1, elapsed / CONFIG.HOVER_TIME_MS);
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(smoothHandPos.x, smoothHandPos.y, 24, -Math.PI/2, -Math.PI/2 + (Math.PI*2 * progress));
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = '#ff4797';
+          ctx.shadowColor = '#ff4797'; ctx.shadowBlur = 10;
+          ctx.stroke();
+          ctx.restore();
+
+          if (progress >= 1.0) {
+            activeHoverTarget.element.classList.remove('hovered');
+            if (activeHoverTarget.action) {
+              executeAction(activeHoverTarget.action);
+            } else if (activeHoverTarget.flowerType) {
+              document.querySelectorAll('.color-swatch').forEach(el => el.classList.remove('active'));
+              activeHoverTarget.element.classList.add('active');
+              activeFlowerType = activeHoverTarget.flowerType;
+            } else if (activeHoverTarget.color) {
+              document.querySelectorAll('.color-swatch').forEach(el => el.classList.remove('active'));
+              activeHoverTarget.element.classList.add('active');
+              paintColor = activeHoverTarget.color;
+            }
+            activeHoverTarget = null;
+            currentGesture = 'none';
+          }
+        } else {
+          if (activeHoverTarget) activeHoverTarget.element.classList.remove('hovered');
+          activeHoverTarget = null;
+        }
+
+        // Draw cursor pointer on fingertip
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(smoothHandPos.x, smoothHandPos.y, isPinching ? 12 : 8, 0, Math.PI*2);
+        ctx.fillStyle = isPinching ? '#ff4797' : '#00f0ff';
+        ctx.shadowColor = isPinching ? '#ff4797' : '#00f0ff';
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // --- FLOWER GARDEN ACTIVITY ---
+      if (currentState === STATES.FLOWER_GARDEN) {
+        let pinchX = smoothHandPos.x;
+        let pinchY = smoothHandPos.y;
+
+        if (handLandmarks && cameraVisible) {
+          const thumbTip = handLandmarks[4];
+          const indexTip = handLandmarks[8];
+          const midX = (thumbTip.x + indexTip.x) / 2;
+          const midY = (thumbTip.y + indexTip.y) / 2;
+          const pinchPt = videoToCanvas(midX, midY);
+          pinchX = pinchPt.x;
+          pinchY = pinchPt.y;
+        }
+
+        const isDrawingActive = (currentGesture === 'pinch') || (useMouseFallback && isMouseDown);
+
+        if (isDrawingActive) {
+          const now = performance.now();
+          if (now - lastFlowerStampTime > 80) {
+            lastFlowerStampTime = now;
+            flowers.push(new Flower(pinchX, pinchY, activeFlowerType, 70, drawStatic));
+            if (flowers.length > CONFIG.MAX_FLOWERS) flowers.shift();
+          }
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(pinchX, pinchY, 16, 0, Math.PI*2);
+          ctx.fillStyle = 'rgba(255, 71, 151, 0.75)';
+          ctx.shadowColor = '#ff4797';
+          ctx.shadowBlur = 12;
+          ctx.fill();
+          ctx.restore();
+        }
+
+        updatePhysics();
+        for (const fl of flowers) fl.draw(ctx);
+      }
+
+      // --- FREE PAINT LOGIC ---
+      if (currentState === STATES.FREE_PAINT) {
+        let pinchX = smoothHandPos.x;
+        let pinchY = smoothHandPos.y;
+
+        if (handLandmarks && cameraVisible) {
+          const thumbTip = handLandmarks[4];
+          const indexTip = handLandmarks[8];
+          const midX = (thumbTip.x + indexTip.x) / 2;
+          const midY = (thumbTip.y + indexTip.y) / 2;
+          const pinchPt = videoToCanvas(midX, midY);
+          pinchX = pinchPt.x;
+          pinchY = pinchPt.y;
+        }
+
+        const isDrawingActive = (currentGesture === 'pinch') || (useMouseFallback && isMouseDown);
+
+        if (isDrawingActive) {
+          if (!isPinching) {
+            currentStroke = new Stroke(paintColor, 12, drawStatic);
+            isPinching = true;
+          }
+          if (currentStroke) currentStroke.addPoint(pinchX, pinchY);
+          
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(pinchX, pinchY, 12, 0, Math.PI*2);
+          ctx.fillStyle = paintColor;
+          ctx.shadowColor = paintColor;
+          ctx.shadowBlur = 12;
+          ctx.fill();
+          ctx.restore();
+        } else {
+          if (isPinching && currentStroke) {
+            currentStroke.complete();
+            if (currentStroke.points.length >= 2) {
+              strokes.push(currentStroke);
+              if (strokes.length > CONFIG.MAX_STROKES) strokes.shift();
+            }
+            currentStroke = null;
+            isPinching = false;
+          }
+        }
+
+        updatePhysics();
+        for (const s of strokes) s.draw(ctx);
+        if (currentStroke && currentStroke.points.length >= 2) currentStroke.draw(ctx);
+      }
+
+      // --- BUBBLE POP LOGIC ---
+      if (currentState === STATES.BUBBLE_POP) {
+        processBubbles();
+      }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       CAMERA & MEDIAPIPE INITIALIZATION
+       ═══════════════════════════════════════════════════════════════ */
+    async function init() {
+      resizeCanvas();
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        $loadingMsg.textContent = 'Camera not supported in this browser. Mouse mode active.';
+        showErrorToast('Camera not supported in this browser. Running in Mouse Mode.');
+        setTimeout(() => { changeState(STATES.CALIBRATION); render(); }, 1000);
+        return;
+      }
+
+      if (typeof Hands === 'undefined') {
+        $loadingMsg.textContent = 'MediaPipe library still loading from CDN. Please refresh if this takes too long.';
+        showErrorToast('MediaPipe Hands CDN loading... please wait a moment or refresh.');
+        setTimeout(() => { changeState(STATES.CALIBRATION); render(); }, 1500);
+        return;
+      }
+
+      try {
+        $loadingMsg.textContent = 'Requesting camera stream...';
+        
+        let stream = null;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: 'user',
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            }
+          });
+        } catch (errConstraint) {
+          console.warn('Ideal resolution constraint failed, falling back to basic video:', errConstraint);
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        }
+
+        $webcam.srcObject = stream;
+        await $webcam.play();
+
+        $loadingMsg.textContent = 'Loading MediaPipe AI Hand Tracker...';
+
+        const hands = new Hands({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+          maxNumHands: 2,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.6,
+          minTrackingConfidence: 0.5
+        });
+
+        hands.onResults((results) => {
+          handLandmarks = selectLockedHand(results);
+        });
+
+        $loadingMsg.textContent = 'Starting AI Vision Loop...';
+
+        // Direct vision loop: feeds frames cleanly without duplicate getUserMedia calls
+        let isSendingFrame = false;
+        async function visionLoop() {
+          if (!isSendingFrame && $webcam.readyState >= 2) {
+            isSendingFrame = true;
+            try {
+              await hands.send({ image: $webcam });
+            } catch (errSend) {
+              // Frame dropped or busy
+            }
+            isSendingFrame = false;
+          }
+          requestAnimationFrame(visionLoop);
+        }
+        visionLoop();
+
+        $loadingMsg.textContent = 'Ready!';
+        changeState(STATES.CALIBRATION);
+        render();
+
+      } catch (err) {
+        console.error('Camera initialization error:', err);
+        const errMsg = err.name === 'NotAllowedError' 
+          ? 'Camera permission denied. Please allow camera in browser address bar.' 
+          : (err.message || 'Webcam unavailable');
+        $loadingMsg.textContent = `${errMsg}. Mouse mode active.`;
+        showErrorToast(errMsg);
+        setTimeout(() => { changeState(STATES.CALIBRATION); render(); }, 1200);
+      }
+    }
+
+    window.onload = () => setTimeout(init, 100);
+  </script>
+</body>
+</html>
