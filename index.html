@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Spatial Paint — AR Physics, Flowers & Hand Tracking</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -285,6 +286,9 @@
         <div id="btn-switch-hand" class="glass-pill hover-target" data-action="switch-hand" title="Click to lock or switch active hand">
           <span class="icon">🔒</span> <span class="text">Lock Hand</span>
         </div>
+        <div id="btn-sound" class="glass-pill hover-target" data-action="toggle-sound" title="Toggle Sound FX">
+          <span class="icon">🔊</span> <span class="text">Sound On</span>
+        </div>
         <div class="status-badge" id="status-badge">
           <div class="status-dot" id="status-dot"></div>
           <span id="status-text">Starting AI Tracking...</span>
@@ -429,6 +433,33 @@
     const $statusDot = document.getElementById('status-dot');
     const $statusText = document.getElementById('status-text');
     const $loadingMsg = document.getElementById('loading-msg');
+    const $btnSound = document.getElementById('btn-sound');
+
+    // Web Audio Procedural Sound Synthesizer
+    let audioCtx = null;
+    let soundEnabled = true;
+
+    function playTone(freq, type = 'sine', duration = 0.15, vol = 0.1) {
+      if (!soundEnabled) return;
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch (e) {}
+    }
+
+    function playPopSound() { playTone(540 + Math.random() * 240, 'triangle', 0.12, 0.15); }
+    function playFlowerSound() { playTone(680 + Math.random() * 200, 'sine', 0.22, 0.12); }
+    function playStrokeSound() { playTone(360, 'sine', 0.08, 0.06); }
 
     const screens = {
       [STATES.LOADING]: document.getElementById('screen-loading'),
@@ -867,6 +898,16 @@
         }
         ctx.fillStyle = '#3a1e05';
         ctx.beginPath(); ctx.arc(0, 0, r*0.35, 0, Math.PI*2); ctx.fill();
+      } else if (type === 'clover') {
+        ctx.fillStyle = '#00f59b';
+        for (let i = 0; i < 4; i++) {
+          ctx.rotate((Math.PI * 2) / 4);
+          ctx.beginPath();
+          ctx.ellipse(0, -r*0.42, r*0.28, r*0.38, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#0a5c36';
+        ctx.beginPath(); ctx.arc(0, 0, r*0.18, 0, Math.PI*2); ctx.fill();
       } else {
         ctx.fillStyle = '#ff0055';
         for (let i = 0; i < 6; i++) {
@@ -1180,7 +1221,8 @@
           { type: 'dahlia', label: '🌺' },
           { type: 'cherry', label: '🌸' },
           { type: 'sunflower', label: '🌻' },
-          { type: 'rose', label: '🌹' }
+          { type: 'rose', label: '🌹' },
+          { type: 'clover', label: '🍀' }
         ];
         flowerSwatches.forEach((s) => {
           const div = document.createElement('div');
@@ -1190,7 +1232,7 @@
           $swatchContainer.appendChild(div);
         });
       } else {
-        const colorSwatches = ['#00f0ff', '#ff4797', '#9d4edd', '#00f5d4', '#ffb703', '#ffffff'];
+        const colorSwatches = ['#00f0ff', '#00f59b', '#0a5c36', '#ff4797', '#9d4edd', '#ffb703', '#ffffff'];
         colorSwatches.forEach((c) => {
           const div = document.createElement('div');
           div.className = `color-swatch hover-target ${paintColor === c ? 'active' : ''}`;
@@ -1258,6 +1300,13 @@
         $modeIcon.textContent = drawStatic ? '📌' : '🪐';
         $modeText.textContent = drawStatic ? 'Anchor' : 'Dynamic';
       }
+      else if (action === 'toggle-sound') {
+        soundEnabled = !soundEnabled;
+        if ($btnSound) {
+          $btnSound.querySelector('.icon').textContent = soundEnabled ? '🔊' : '🔇';
+          $btnSound.querySelector('.text').textContent = soundEnabled ? 'Sound On' : 'Muted';
+        }
+      }
     }
 
     function updateScore() {
@@ -1306,6 +1355,7 @@
           const dx = smoothHandPos.x - b.x;
           const dy = smoothHandPos.y - b.y;
           if (Math.sqrt(dx*dx + dy*dy) < b.r + 20) {
+            playPopSound();
             spawnParticles(b.x, b.y, b.color);
             bubbles.splice(i, 1);
             score += 10;
@@ -1506,6 +1556,7 @@
           const now = performance.now();
           if (now - lastFlowerStampTime > 80) {
             lastFlowerStampTime = now;
+            playFlowerSound();
             flowers.push(new Flower(pinchX, pinchY, activeFlowerType, 70, drawStatic));
             if (flowers.length > CONFIG.MAX_FLOWERS) flowers.shift();
           }
@@ -1543,6 +1594,7 @@
 
         if (isDrawingActive) {
           if (!isPinching) {
+            playStrokeSound();
             currentStroke = new Stroke(paintColor, 12, drawStatic);
             isPinching = true;
           }
